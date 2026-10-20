@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OS Memory Leak Detector & Visualizer</title>
+
+  <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Bootstrap 5 & Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+  <style>
+    :root {
+      --bg-dark: #0a0f1d;
+      --card-bg: rgba(22, 30, 49, 0.75);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --accent-cyan: #06b6d4;
+      --accent-blue: #3b82f6;
+      --accent-purple: #8b5cf6;
+      --accent-red: #ef4444;
+      --accent-green: #10b981;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      background-image: 
+        radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 40%);
+      color: #f1f5f9;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      min-height: 100vh;
+    }
+
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Glassmorphism Cards */
+    .glass-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      transition: transform 0.25s ease, border-color 0.25s ease;
+    }
+    .glass-card:hover {
+      border-color: rgba(255, 255, 255, 0.16);
+    }
+
+    /* Gradient Title */
+    .title-gradient {
+      background: linear-gradient(135deg, #38bdf8 0%, #818cf8 50%, #c084fc 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* Animated RAM Visualizer Bar */
+    .ram-container {
+      height: 52px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 2px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      padding: 4px;
+      gap: 4px;
+      box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.6);
+    }
+
+    .memory-chunk {
+      height: 100%;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: white;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding: 0 8px;
+      transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+    }
+
+    /* Active Allocation */
+    .chunk-active {
+      background: linear-gradient(135deg, #2563eb, #06b6d4);
+      background-size: 200% 200%;
+      box-shadow: 0 0 12px rgba(6, 182, 212, 0.3);
+      animation: gradientShift 6s ease infinite;
+    }
+
+    /* Pulsing Leaked Memory Alarm Animation */
+    .chunk-leak {
+      background: linear-gradient(135deg, #dc2626, #ef4444) !important;
+      animation: pulse-leak 1.2s infinite ease-in-out !important;
+    }
+
+    @keyframes pulse-leak {
+      0% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);
+        transform: scale(1);
+      }
+      50% {
+        box-shadow: 0 0 18px 4px rgba(239, 68, 68, 0.9);
+        transform: scale(0.98);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+        transform: scale(1);
+      }
+    }
+
+    @keyframes gradientShift {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    /* Custom Form Inputs */
+    .custom-input {
+      background-color: rgba(15, 23, 42, 0.8) !important;
+      border: 1px solid rgba(255, 255, 255, 0.12) !important;
+      color: #fff !important;
+      border-radius: 10px;
+    }
+    .custom-input:focus {
+      border-color: var(--accent-cyan) !important;
+      box-shadow: 0 0 10px rgba(6, 182, 212, 0.3) !important;
+    }
+
+    /* Terminal Console */
+    .terminal-box {
+      background: #050811;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      font-size: 12px;
+      height: 220px;
+      overflow-y: auto;
+      padding: 12px;
+    }
+    .terminal-header {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .dot-red { background: #ef4444; }
+    .dot-yellow { background: #f59e0b; }
+    .dot-green { background: #10b981; }
+
+    /* Button Glows */
+    .btn-glow-cyan {
+      background: linear-gradient(135deg, #06b6d4, #2563eb);
+      border: none;
+      color: white;
+      font-weight: 600;
+      transition: all 0.3s;
+    }
+    .btn-glow-cyan:hover {
+      box-shadow: 0 0 15px rgba(6, 182, 212, 0.5);
+      transform: translateY(-2px);
+    }
+    .btn-glow-red {
+      background: linear-gradient(135deg, #ef4444, #b91c1c);
+      border: none;
+      color: white;
+      font-weight: 600;
+      transition: all 0.3s;
+    }
+    .btn-glow-red:hover {
+      box-shadow: 0 0 18px rgba(239, 68, 68, 0.6);
+      transform: translateY(-2px);
+    }
+
+    .row-leak {
+      background-color: rgba(239, 68, 68, 0.18) !important;
+      border-left: 4px solid #ef4444 !important;
+    }
+  </style>
+</head>
+<body class="p-3 p-md-4">
+
+  <div class="container-fluid max-w-7xl">
+    
+    <!-- Header -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+      <div>
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <i class="bi bi-cpu-fill text-info fs-3"></i>
+          <h2 class="fw-extrabold title-gradient mb-0 tracking-tight">OS Memory Leak Detector</h2>
+          <span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-25 px-2 py-1 ms-2 font-mono">v2.1</span>
+        </div>
+        <p class="text-secondary small mb-0 font-mono">SRM University • Course Code: 21CSC202J • Dynamic Allocation Auditor</p>
+      </div>
+      <div>
+        <button class="btn btn-outline-secondary btn-sm px-3 py-2 rounded-3 text-light" onclick="resetMemory()">
+          <i class="bi bi-arrow-counterclockwise me-1"></i> Reset Memory
+        </button>
+      </div>
+    </div>
+
+    <!-- Live Metric Cards -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3">
+        <div class="glass-card p-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="text-secondary small fw-medium">Total Pool</span>
+            <i class="bi bi-hdd-network text-secondary"></i>
+          </div>
+          <h3 class="fw-bold mb-0 font-mono text-white" id="totalMem">100,000 B</h3>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="glass-card p-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="text-secondary small fw-medium">Allocated RAM</span>
+            <i class="bi bi-pie-chart text-info"></i>
+          </div>
+          <h3 class="fw-bold mb-0 font-mono text-info" id="usedMem">0 B</h3>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="glass-card p-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="text-secondary small fw-medium">Free Space</span>
+            <i class="bi bi-shield-check text-success"></i>
+          </div>
+          <h3 class="fw-bold mb-0 font-mono text-success" id="freeMem">100,000 B</h3>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="glass-card p-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="text-secondary small fw-medium">Active Blocks</span>
+            <i class="bi bi-boxes text-warning"></i>
+          </div>
+          <h3 class="fw-bold mb-0 font-mono text-warning" id="blockCount">0</h3>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dynamic Animated RAM Bar -->
+    <div class="glass-card p-4 mb-4">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="fw-bold mb-0 text-white d-flex align-items-center gap-2">
+          <i class="bi bi-memory text-primary"></i> Virtual Heap Address Space Visualizer
+        </h6>
+        <span class="text-secondary font-mono small" id="ramPercentage">0% Occupied</span>
+      </div>
+      
+      <div class="ram-container" id="ramBar">
+        <!-- Chunks injected dynamically via JS -->
+      </div>
+      
+      <div class="d-flex justify-content-between text-secondary font-mono small mt-2">
+        <span>0x700000 (Base)</span>
+        <span>0x7186A0 (Limit)</span>
+      </div>
+    </div>
+
+    <!-- Controls & Audit Dashboard -->
+    <div class="row g-4">
+      
+      <!-- Left Column: Controls & Console -->
+      <div class="col-lg-5">
+        
+        <!-- Manual Allocation -->
+        <div class="glass-card p-3 mb-3">
+          <h6 class="fw-bold text-info mb-3">
+            <i class="bi bi-plus-circle me-1"></i> 1. Manual Allocation (malloc)
+          </h6>
+          <div class="row g-2">
+            <div class="col-7">
+              <input type="text" id="allocTag" class="form-control form-control-sm custom-input" placeholder="Variable Tag (e.g. ImageBuffer)">
+            </div>
+            <div class="col-5">
+              <input type="number" id="allocSize" class="form-control form-control-sm custom-input" placeholder="Bytes (e.g. 15000)">
+            </div>
+            <div class="col-12 mt-2">
+              <button class="btn btn-glow-cyan btn-sm w-100 py-2 rounded-3" onclick="allocate()">
+                <i class="bi bi-lightning-charge me-1"></i> Allocate Memory Block
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Automated Scenarios -->
+        <div class="glass-card p-3 mb-3">
+          <h6 class="fw-bold text-warning mb-2">
+            <i class="bi bi-play-circle me-1"></i> 2. Preset Simulation Scenarios
+          </h6>
+          <p class="text-secondary small mb-3">Run pre-configured test programs to showcase normal behavior vs. memory leaks:</p>
+          <div class="row g-2">
+            <div class="col-6">
+              <button class="btn btn-outline-success btn-sm w-100 py-2 rounded-3 fw-medium" onclick="runScenario('clean')">
+                <i class="bi bi-check-all me-1"></i> Clean Program
+              </button>
+            </div>
+            <div class="col-6">
+              <button class="btn btn-outline-danger btn-sm w-100 py-2 rounded-3 fw-medium" onclick="runScenario('leaky')">
+                <i class="bi bi-bug me-1"></i> Leaky Program
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Terminal Logs -->
+        <div class="glass-card p-3">
+          <div class="terminal-header">
+            <span class="dot dot-red"></span>
+            <span class="dot dot-yellow"></span>
+            <span class="dot dot-green"></span>
+            <span class="text-secondary small font-mono ms-2">system.log</span>
+          </div>
+          <div class="terminal-box font-mono" id="logBox"></div>
+        </div>
+
+      </div>
+
+      <!-- Right Column: Active Memory Table & Leak Auditor -->
+      <div class="col-lg-7">
+        <div class="glass-card p-4">
+          <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+            <h5 class="fw-bold mb-0 text-white">
+              <i class="bi bi-table me-2 text-primary"></i> Active Allocation Registry
+            </h5>
+            <button class="btn btn-glow-red btn-sm px-3 py-2 rounded-3" onclick="auditLeaks()">
+              <i class="bi bi-shield-exclamation me-1"></i> Run Leak Audit
+            </button>
+          </div>
+
+          <div class="table-responsive">
+            <table class="table table-dark table-hover font-mono small align-middle mb-0" style="background: transparent;">
+              <thead>
+                <tr class="text-secondary border-secondary">
+                  <th>ID</th>
+                  <th>Simulated Address</th>
+                  <th>Tag / Identifier</th>
+                  <th>Size</th>
+                  <th>Timestamp</th>
+                  <th class="text-end">Action</th>
+                </tr>
+              </thead>
+              <tbody id="blockTable">
+                <tr><td colspan="6" class="text-center text-muted py-4">No active allocations in heap memory</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div id="leakAlertBox" class="mt-3"></div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    async function updateUI() {
+      const res = await fetch('/api/state');
+      const data = await res.json();
+
+      document.getElementById('totalMem').innerText = data.total_memory.toLocaleString() + ' B';
+      document.getElementById('usedMem').innerText = data.used_memory.toLocaleString() + ' B';
+      document.getElementById('freeMem').innerText = data.free_memory.toLocaleString() + ' B';
+      document.getElementById('blockCount').innerText = data.blocks.length;
+
+      const pctOccupied = ((data.used_memory / data.total_memory) * 100).toFixed(1);
+      document.getElementById('ramPercentage').innerText = pctOccupied + '% Occupied';
+
+      // Render Visual RAM Bar
+      const ramBar = document.getElementById('ramBar');
+      ramBar.innerHTML = '';
+      data.blocks.forEach(b => {
+        const pct = (b.size / data.total_memory) * 100;
+        const chunk = document.createElement('div');
+        chunk.className = 'memory-chunk chunk-active font-mono';
+        chunk.id = 'chunk-' + b.address;
+        chunk.style.width = pct + '%';
+        chunk.innerHTML = `<span>${b.tag} (${b.size}B)</span>`;
+        chunk.title = `Address: ${b.address} | Size: ${b.size} Bytes`;
+        ramBar.appendChild(chunk);
+      });
+
+      // Render Table
+      const tbody = document.getElementById('blockTable');
+      if (data.blocks.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No active allocations in heap memory</td></tr>';
+      } else {
+        tbody.innerHTML = '';
+        data.blocks.forEach(b => {
+          tbody.innerHTML += `
+            <tr id="row-${b.address}" style="transition: all 0.3s;">
+              <td><span class="badge bg-secondary font-mono">${b.id}</span></td>
+              <td class="text-info fw-bold">${b.address}</td>
+              <td class="text-white">${b.tag}</td>
+              <td>${b.size.toLocaleString()} B</td>
+              <td class="text-secondary">${b.timestamp}</td>
+              <td class="text-end">
+                <button class="btn btn-outline-danger btn-sm py-0 px-2 rounded-2" onclick="deallocate('${b.address}')">
+                  <i class="bi bi-trash3 me-1"></i>Free
+                </button>
+              </td>
+            </tr>
+          `;
+        });
+      }
+
+      // Render Terminal Logs
+      const logBox = document.getElementById('logBox');
+      logBox.innerHTML = data.logs.map(l => {
+        let colorClass = 'text-info';
+        if (l.type === 'danger') colorClass = 'text-danger fw-bold';
+        if (l.type === 'warning') colorClass = 'text-warning';
+        if (l.type === 'success') colorClass = 'text-success';
+        return `<div class="${colorClass} mb-1">> [${l.time}] ${l.text}</div>`;
+      }).join('');
+    }
+
+    async function allocate() {
+      const tag = document.getElementById('allocTag').value || 'VariableData';
+      const size = parseInt(document.getElementById('allocSize').value) || 12000;
+      await fetch('/api/allocate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({tag, size})
+      });
+      document.getElementById('allocTag').value = '';
+      document.getElementById('allocSize').value = '';
+      document.getElementById('leakAlertBox').innerHTML = '';
+      updateUI();
+    }
+
+    async function deallocate(address) {
+      await fetch('/api/deallocate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({address})
+      });
+      document.getElementById('leakAlertBox').innerHTML = '';
+      updateUI();
+    }
+
+    async function runScenario(type) {
+      document.getElementById('leakAlertBox').innerHTML = '';
+      await fetch(`/api/simulate/${type}`, { method: 'POST' });
+      updateUI();
+    }
+
+    async function resetMemory() {
+      document.getElementById('leakAlertBox').innerHTML = '';
+      await fetch('/api/reset', { method: 'POST' });
+      updateUI();
+    }
+
+    async function auditLeaks() {
+      const res = await fetch('/api/state');
+      const data = await res.json();
+      const alertBox = document.getElementById('leakAlertBox');
+
+      if (data.blocks.length === 0) {
+        alertBox.innerHTML = `
+          <div class="alert alert-success d-flex align-items-center gap-2 border-0 glass-card text-success fw-bold py-3">
+            <i class="bi bi-check-circle-fill fs-4"></i>
+            <div>
+              [AUDIT PASSED] No memory leaks detected!<br>
+              <small class="text-secondary fw-normal">All dynamically requested memory was properly deallocated before termination.</small>
+            </div>
+          </div>
+        `;
+      } else {
+        let totalLeaked = data.blocks.reduce((acc, b) => acc + b.size, 0);
+        
+        // Trigger pulsing red alarm animation on leaked chunks & table rows
+        data.blocks.forEach(b => {
+          const chunk = document.getElementById('chunk-' + b.address);
+          if (chunk) chunk.classList.add('chunk-leak');
+          const row = document.getElementById('row-' + b.address);
+          if (row) row.classList.add('row-leak');
+        });
+
+        alertBox.innerHTML = `
+          <div class="alert alert-danger border-0 glass-card py-3">
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <i class="bi bi-exclamation-triangle-fill fs-4 text-danger"></i>
+              <strong class="fs-6 text-danger">MEMORY LEAK(S) DETECTED!</strong>
+            </div>
+            <div class="small text-secondary ps-4">
+              Found <span class="text-white fw-bold">${data.blocks.length}</span> unfreed memory block(s) stranded in the heap pool.<br>
+              Total Leaked Memory: <span class="text-danger fw-bold font-mono">${totalLeaked.toLocaleString()} Bytes</span>.<br>
+              <em>Leaked addresses are glowing with a red alarm above.</em>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    // Initial load
+    updateUI();
+  </script>
+</body>
+</html>
