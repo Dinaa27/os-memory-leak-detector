@@ -3,22 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OS Memory Leak Detector & Visualizer</title>
+  <title>OS Memory Leak Detector & Dynamic Heap Visualizer</title>
 
-  <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
+  <!-- Typography: Plus Jakarta Sans & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-  <!-- Bootstrap 5 & Bootstrap Icons -->
+  <!-- Bootstrap 5 & Icons -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
 
   <style>
     :root {
-      --bg-dark: #0a0f1d;
-      --card-bg: rgba(22, 30, 49, 0.75);
-      --card-border: rgba(255, 255, 255, 0.08);
+      --bg-color: #07090e;
+      --card-bg: rgba(13, 18, 30, 0.7);
+      --card-border: rgba(255, 255, 255, 0.07);
       --accent-cyan: #06b6d4;
       --accent-blue: #3b82f6;
       --accent-purple: #8b5cf6;
@@ -26,54 +26,160 @@
       --accent-green: #10b981;
     }
 
+    * { box-sizing: border-box; }
+
     body {
-      background-color: var(--bg-dark);
-      background-image: 
-        radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.08) 0%, transparent 40%),
-        radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 40%);
+      background-color: var(--bg-color);
       color: #f1f5f9;
       font-family: 'Plus Jakarta Sans', sans-serif;
       min-height: 100vh;
+      overflow-x: hidden;
+      position: relative;
     }
 
-    .font-mono {
-      font-family: 'JetBrains Mono', monospace;
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* ========================================================
+       1. REACTBITS SQUARES BACKGROUND (Canvas Layer)
+       ======================================================== */
+    #bg-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: -1;
+      pointer-events: none;
     }
 
-    /* Glassmorphism Cards */
-    .glass-card {
+    /* ========================================================
+       2. REACTBITS SPOTLIGHT CARD (Mouse-following radial border)
+       ======================================================== */
+    .spotlight-card {
+      position: relative;
       background: var(--card-bg);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid var(--card-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
       border-radius: 16px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-      transition: transform 0.25s ease, border-color 0.25s ease;
+      border: 1px solid var(--card-border);
+      overflow: hidden;
+      transition: transform 0.25s ease, box-shadow 0.25s ease;
     }
-    .glass-card:hover {
-      border-color: rgba(255, 255, 255, 0.16);
+    .spotlight-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      border-radius: inherit;
+      padding: 1.5px;
+      background: radial-gradient(
+        350px circle at var(--mouse-x, -500px) var(--mouse-y, -500px),
+        rgba(6, 182, 212, 0.4),
+        transparent 60%
+      );
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events: none;
+    }
+    .spotlight-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
     }
 
-    /* Gradient Title */
+    /* ========================================================
+       3. REACTBITS SPECULAR BUTTON
+       ======================================================== */
+    .specular-btn {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%), #121826;
+      color: #fff;
+      overflow: hidden;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2), 0 4px 15px rgba(0, 0, 0, 0.4);
+    }
+    /* Dynamic Specular Sheen layer */
+    .specular-btn::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: radial-gradient(
+        120px circle at var(--specular-x, 50%) var(--specular-y, 50%),
+        rgba(255, 255, 255, 0.4) 0%,
+        transparent 80%
+      );
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+    }
+    .specular-btn:hover::after { opacity: 1; }
+    .specular-btn:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.35);
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4), 0 8px 25px rgba(0, 0, 0, 0.6);
+    }
+    .specular-btn-primary {
+      background: linear-gradient(180deg, rgba(6, 182, 212, 0.3) 0%, rgba(37, 99, 235, 0.15) 100%), #0c182c;
+      border-color: rgba(6, 182, 212, 0.35);
+    }
+    .specular-btn-primary:hover {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 25px rgba(6, 182, 212, 0.35), inset 0 1px 2px rgba(255, 255, 255, 0.4);
+    }
+    .specular-btn-danger {
+      background: linear-gradient(180deg, rgba(239, 68, 68, 0.35) 0%, rgba(185, 28, 28, 0.18) 100%), #1f0b0e;
+      border-color: rgba(239, 68, 68, 0.45);
+    }
+    .specular-btn-danger:hover {
+      border-color: var(--accent-red);
+      box-shadow: 0 0 30px rgba(239, 68, 68, 0.45), inset 0 1px 2px rgba(255, 255, 255, 0.5);
+    }
+
+    /* ========================================================
+       4. REACTBITS TEXT-LOOP COMPONENT
+       ======================================================== */
+    .text-loop-wrapper {
+      display: inline-flex;
+      align-items: center;
+      height: 24px;
+      overflow: hidden;
+      vertical-align: middle;
+    }
+    .text-loop-item {
+      display: block;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.45s ease;
+    }
+
+    /* Title Gradient */
     .title-gradient {
       background: linear-gradient(135deg, #38bdf8 0%, #818cf8 50%, #c084fc 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
 
-    /* Animated RAM Visualizer Bar */
+    /* RAM Visualizer Bar */
     .ram-container {
       height: 52px;
-      background: rgba(15, 23, 42, 0.9);
-      border: 2px solid rgba(255, 255, 255, 0.06);
+      background: rgba(10, 14, 24, 0.9);
+      border: 2px solid rgba(255, 255, 255, 0.08);
       border-radius: 12px;
       overflow: hidden;
       display: flex;
       padding: 4px;
       gap: 4px;
-      box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.6);
+      box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.7);
     }
-
     .memory-chunk {
       height: 100%;
       border-radius: 8px;
@@ -88,57 +194,32 @@
       text-overflow: ellipsis;
       padding: 0 8px;
       transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-      position: relative;
     }
-
-    /* Active Allocation */
     .chunk-active {
       background: linear-gradient(135deg, #2563eb, #06b6d4);
-      background-size: 200% 200%;
-      box-shadow: 0 0 12px rgba(6, 182, 212, 0.3);
-      animation: gradientShift 6s ease infinite;
+      box-shadow: 0 0 15px rgba(6, 182, 212, 0.35);
     }
-
-    /* Pulsing Leaked Memory Alarm Animation */
     .chunk-leak {
       background: linear-gradient(135deg, #dc2626, #ef4444) !important;
       animation: pulse-leak 1.2s infinite ease-in-out !important;
     }
-
     @keyframes pulse-leak {
-      0% {
-        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);
-        transform: scale(1);
-      }
-      50% {
-        box-shadow: 0 0 18px 4px rgba(239, 68, 68, 0.9);
-        transform: scale(0.98);
-      }
-      100% {
-        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
-        transform: scale(1);
-      }
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8); transform: scale(1); }
+      50% { box-shadow: 0 0 20px 6px rgba(239, 68, 68, 0.95); transform: scale(0.98); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); transform: scale(1); }
     }
 
-    @keyframes gradientShift {
-      0% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
-      100% { background-position: 0% 50%; }
-    }
-
-    /* Custom Form Inputs */
+    /* Inputs & Terminal */
     .custom-input {
-      background-color: rgba(15, 23, 42, 0.8) !important;
+      background-color: rgba(10, 15, 26, 0.8) !important;
       border: 1px solid rgba(255, 255, 255, 0.12) !important;
       color: #fff !important;
       border-radius: 10px;
     }
     .custom-input:focus {
       border-color: var(--accent-cyan) !important;
-      box-shadow: 0 0 10px rgba(6, 182, 212, 0.3) !important;
+      box-shadow: 0 0 12px rgba(6, 182, 212, 0.35) !important;
     }
-
-    /* Terminal Console */
     .terminal-box {
       background: #050811;
       border: 1px solid rgba(255, 255, 255, 0.08);
@@ -148,71 +229,54 @@
       overflow-y: auto;
       padding: 12px;
     }
-    .terminal-header {
-      display: flex;
-      gap: 6px;
-      margin-bottom: 8px;
-    }
     .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
     .dot-red { background: #ef4444; }
     .dot-yellow { background: #f59e0b; }
     .dot-green { background: #10b981; }
 
-    /* Button Glows */
-    .btn-glow-cyan {
-      background: linear-gradient(135deg, #06b6d4, #2563eb);
-      border: none;
-      color: white;
-      font-weight: 600;
-      transition: all 0.3s;
-    }
-    .btn-glow-cyan:hover {
-      box-shadow: 0 0 15px rgba(6, 182, 212, 0.5);
-      transform: translateY(-2px);
-    }
-    .btn-glow-red {
-      background: linear-gradient(135deg, #ef4444, #b91c1c);
-      border: none;
-      color: white;
-      font-weight: 600;
-      transition: all 0.3s;
-    }
-    .btn-glow-red:hover {
-      box-shadow: 0 0 18px rgba(239, 68, 68, 0.6);
-      transform: translateY(-2px);
-    }
-
     .row-leak {
-      background-color: rgba(239, 68, 68, 0.18) !important;
+      background-color: rgba(239, 68, 68, 0.22) !important;
       border-left: 4px solid #ef4444 !important;
     }
   </style>
 </head>
 <body class="p-3 p-md-4">
 
+  <!-- ReactBits Squares Interactive Background -->
+  <canvas id="bg-canvas"></canvas>
+
   <div class="container-fluid max-w-7xl">
     
-    <!-- Header -->
+    <!-- Top Header -->
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
       <div>
         <div class="d-flex align-items-center gap-2 mb-1">
           <i class="bi bi-cpu-fill text-info fs-3"></i>
-          <h2 class="fw-extrabold title-gradient mb-0 tracking-tight">OS Memory Leak Detector</h2>
-          <span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-25 px-2 py-1 ms-2 font-mono">v2.1</span>
+          <!-- ReactBits Decrypted Text target -->
+          <h2 class="fw-extrabold title-gradient mb-0 tracking-tight" id="mainTitle">OS Memory Leak Detector</h2>
+          <span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-25 px-2 py-1 ms-2 font-mono">v2.5</span>
         </div>
-        <p class="text-secondary small mb-0 font-mono">SRM University • Course Code: 21CSC202J • Dynamic Allocation Auditor</p>
+        
+        <!-- ReactBits Text Loop Component Integration -->
+        <div class="text-secondary small font-mono mt-1">
+          SRM University • 21CSC202J • Monitoring: 
+          <span class="text-loop-wrapper">
+            <span class="text-loop-item ms-1" id="textLoopTarget">Heap Allocations</span>
+          </span>
+        </div>
       </div>
+
       <div>
-        <button class="btn btn-outline-secondary btn-sm px-3 py-2 rounded-3 text-light" onclick="resetMemory()">
-          <i class="bi bi-arrow-counterclockwise me-1"></i> Reset Memory
+        <button class="specular-btn" onclick="resetMemory()">
+          <i class="bi bi-arrow-counterclockwise"></i> Reset Heap
         </button>
       </div>
     </div>
 
-    <!-- Live Metric Cards -->
+    <!-- Metric Cards with ReactBits Spotlight -->
     <div class="row g-3 mb-4">
       <div class="col-6 col-md-3">
-        <div class="glass-card p-3">
+        <div class="spotlight-card p-3">
           <div class="d-flex justify-content-between align-items-center mb-1">
             <span class="text-secondary small fw-medium">Total Pool</span>
             <i class="bi bi-hdd-network text-secondary"></i>
@@ -221,7 +285,7 @@
         </div>
       </div>
       <div class="col-6 col-md-3">
-        <div class="glass-card p-3">
+        <div class="spotlight-card p-3">
           <div class="d-flex justify-content-between align-items-center mb-1">
             <span class="text-secondary small fw-medium">Allocated RAM</span>
             <i class="bi bi-pie-chart text-info"></i>
@@ -230,16 +294,16 @@
         </div>
       </div>
       <div class="col-6 col-md-3">
-        <div class="glass-card p-3">
+        <div class="spotlight-card p-3">
           <div class="d-flex justify-content-between align-items-center mb-1">
-            <span class="text-secondary small fw-medium">Free Space</span>
+            <span class="text-secondary small fw-medium">Free Available</span>
             <i class="bi bi-shield-check text-success"></i>
           </div>
           <h3 class="fw-bold mb-0 font-mono text-success" id="freeMem">100,000 B</h3>
         </div>
       </div>
       <div class="col-6 col-md-3">
-        <div class="glass-card p-3">
+        <div class="spotlight-card p-3">
           <div class="d-flex justify-content-between align-items-center mb-1">
             <span class="text-secondary small fw-medium">Active Blocks</span>
             <i class="bi bi-boxes text-warning"></i>
@@ -249,93 +313,93 @@
       </div>
     </div>
 
-    <!-- Dynamic Animated RAM Bar -->
-    <div class="glass-card p-4 mb-4">
+    <!-- Live RAM Heap Space Visualizer -->
+    <div class="spotlight-card p-4 mb-4">
       <div class="d-flex justify-content-between align-items-center mb-2">
         <h6 class="fw-bold mb-0 text-white d-flex align-items-center gap-2">
-          <i class="bi bi-memory text-primary"></i> Virtual Heap Address Space Visualizer
+          <i class="bi bi-memory text-primary"></i> Virtual Heap Address Space (Visualizer)
         </h6>
         <span class="text-secondary font-mono small" id="ramPercentage">0% Occupied</span>
       </div>
       
-      <div class="ram-container" id="ramBar">
-        <!-- Chunks injected dynamically via JS -->
-      </div>
+      <div class="ram-container" id="ramBar"></div>
       
       <div class="d-flex justify-content-between text-secondary font-mono small mt-2">
-        <span>0x700000 (Base)</span>
-        <span>0x7186A0 (Limit)</span>
+        <span>0x700000 (Base Address)</span>
+        <span>0x7186A0 (Limit Address)</span>
       </div>
     </div>
 
-    <!-- Controls & Audit Dashboard -->
+    <!-- Controls & Table -->
     <div class="row g-4">
       
-      <!-- Left Column: Controls & Console -->
+      <!-- Left: Inputs & Logs -->
       <div class="col-lg-5">
         
         <!-- Manual Allocation -->
-        <div class="glass-card p-3 mb-3">
+        <div class="spotlight-card p-3 mb-3">
           <h6 class="fw-bold text-info mb-3">
-            <i class="bi bi-plus-circle me-1"></i> 1. Manual Allocation (malloc)
+            <i class="bi bi-plus-circle me-1"></i> 1. Manual Dynamic Allocation (malloc)
           </h6>
           <div class="row g-2">
             <div class="col-7">
-              <input type="text" id="allocTag" class="form-control form-control-sm custom-input" placeholder="Variable Tag (e.g. ImageBuffer)">
+              <input type="text" id="allocTag" class="form-control form-control-sm custom-input" placeholder="Tag (e.g. FrameBuffer)">
             </div>
             <div class="col-5">
               <input type="number" id="allocSize" class="form-control form-control-sm custom-input" placeholder="Bytes (e.g. 15000)">
             </div>
             <div class="col-12 mt-2">
-              <button class="btn btn-glow-cyan btn-sm w-100 py-2 rounded-3" onclick="allocate()">
-                <i class="bi bi-lightning-charge me-1"></i> Allocate Memory Block
+              <!-- ReactBits Specular Primary Button -->
+              <button class="specular-btn specular-btn-primary w-100" onclick="allocate()">
+                <i class="bi bi-lightning-charge"></i> Allocate Memory Block
               </button>
             </div>
           </div>
         </div>
 
-        <!-- Automated Scenarios -->
-        <div class="glass-card p-3 mb-3">
+        <!-- Presets -->
+        <div class="spotlight-card p-3 mb-3">
           <h6 class="fw-bold text-warning mb-2">
-            <i class="bi bi-play-circle me-1"></i> 2. Preset Simulation Scenarios
+            <i class="bi bi-play-circle me-1"></i> 2. Automated Diagnostic Presets
           </h6>
-          <p class="text-secondary small mb-3">Run pre-configured test programs to showcase normal behavior vs. memory leaks:</p>
+          <p class="text-secondary small mb-3">Simulate real-world program execution patterns:</p>
           <div class="row g-2">
             <div class="col-6">
-              <button class="btn btn-outline-success btn-sm w-100 py-2 rounded-3 fw-medium" onclick="runScenario('clean')">
-                <i class="bi bi-check-all me-1"></i> Clean Program
+              <button class="specular-btn w-100 py-2" onclick="runScenario('clean')">
+                <i class="bi bi-check-all text-success"></i> Clean Program
               </button>
             </div>
             <div class="col-6">
-              <button class="btn btn-outline-danger btn-sm w-100 py-2 rounded-3 fw-medium" onclick="runScenario('leaky')">
-                <i class="bi bi-bug me-1"></i> Leaky Program
+              <button class="specular-btn w-100 py-2" onclick="runScenario('leaky')">
+                <i class="bi bi-bug text-danger"></i> Leaky Program
               </button>
             </div>
           </div>
         </div>
 
         <!-- Terminal Logs -->
-        <div class="glass-card p-3">
-          <div class="terminal-header">
+        <div class="spotlight-card p-3">
+          <div class="d-flex align-items-center gap-2 mb-2">
             <span class="dot dot-red"></span>
             <span class="dot dot-yellow"></span>
             <span class="dot dot-green"></span>
-            <span class="text-secondary small font-mono ms-2">system.log</span>
+            <span class="text-secondary small font-mono ms-2">kernel_telemetry.log</span>
           </div>
           <div class="terminal-box font-mono" id="logBox"></div>
         </div>
 
       </div>
 
-      <!-- Right Column: Active Memory Table & Leak Auditor -->
+      <!-- Right: Active Registry & Auditor -->
       <div class="col-lg-7">
-        <div class="glass-card p-4">
+        <div class="spotlight-card p-4">
           <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
             <h5 class="fw-bold mb-0 text-white">
-              <i class="bi bi-table me-2 text-primary"></i> Active Allocation Registry
+              <i class="bi bi-table me-2 text-primary"></i> Active Heap Registry Table
             </h5>
-            <button class="btn btn-glow-red btn-sm px-3 py-2 rounded-3" onclick="auditLeaks()">
-              <i class="bi bi-shield-exclamation me-1"></i> Run Leak Audit
+            <!-- ReactBits Specular Danger Button -->
+            <button class="specular-btn specular-btn-danger" onclick="auditLeaks()">
+              <i class="bi bi-shield-exclamation"></i> Run Memory Leak Audit
             </button>
           </div>
 
@@ -344,7 +408,7 @@
               <thead>
                 <tr class="text-secondary border-secondary">
                   <th>ID</th>
-                  <th>Simulated Address</th>
+                  <th>Simulated Hex Address</th>
                   <th>Tag / Identifier</th>
                   <th>Size</th>
                   <th>Timestamp</th>
@@ -358,7 +422,6 @@
           </div>
 
           <div id="leakAlertBox" class="mt-3"></div>
-
         </div>
       </div>
 
@@ -366,6 +429,122 @@
   </div>
 
   <script>
+    // =========================================================
+    // 1. REACTBITS SQUARES INTERACTIVE BACKGROUND (CANVAS)
+    // =========================================================
+    const canvas = document.getElementById('bg-canvas');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+    let mouse = { x: -1000, y: -1000 };
+
+    function resizeCanvas() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    window.addEventListener('mousemove', (e) => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+    });
+
+    const squareSize = 45;
+    function drawGrid() {
+      ctx.clearRect(0, 0, width, height);
+      for (let x = 0; x < width; x += squareSize) {
+        for (let y = 0; y < height; y += squareSize) {
+          const dx = mouse.x - (x + squareSize / 2);
+          const dy = mouse.y - (y + squareSize / 2);
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const maxDist = 180;
+          
+          let alpha = 0.03;
+          if (dist < maxDist) {
+            alpha = 0.03 + (1 - dist / maxDist) * 0.15;
+          }
+
+          ctx.strokeStyle = `rgba(56, 189, 248, ${alpha})`;
+          ctx.strokeRect(x, y, squareSize, squareSize);
+        }
+      }
+      requestAnimationFrame(drawGrid);
+    }
+    drawGrid();
+
+    // =========================================================
+    // 2. REACTBITS SPOTLIGHT CARD MOUSE TRACKER
+    // =========================================================
+    document.querySelectorAll('.spotlight-card').forEach(card => {
+      card.addEventListener('mousemove', (e) => {
+        const rect = card.getBoundingClientRect();
+        card.style.setProperty('--mouse-x', `${e.clientX - rect.left}px`);
+        card.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`);
+      });
+    });
+
+    // =========================================================
+    // 3. REACTBITS SPECULAR BUTTON HIGHLIGHT TRACKER
+    // =========================================================
+    document.querySelectorAll('.specular-btn').forEach(btn => {
+      btn.addEventListener('mousemove', (e) => {
+        const rect = btn.getBoundingClientRect();
+        btn.style.setProperty('--specular-x', `${e.clientX - rect.left}px`);
+        btn.style.setProperty('--specular-y', `${e.clientY - rect.top}px`);
+      });
+    });
+
+    // =========================================================
+    // 4. REACTBITS TEXT-LOOP COMPONENT (Looping Subtitle)
+    // =========================================================
+    const loopPhrases = [
+      "Heap Allocations",
+      "Memory Leaks",
+      "Dynamic Pointers",
+      "Virtual Addresses",
+      "Double-Free Checks"
+    ];
+    let loopIndex = 0;
+    const loopTarget = document.getElementById('textLoopTarget');
+
+    setInterval(() => {
+      loopTarget.style.opacity = '0';
+      loopTarget.style.transform = 'translateY(-12px)';
+      setTimeout(() => {
+        loopIndex = (loopIndex + 1) % loopPhrases.length;
+        loopTarget.innerText = loopPhrases[loopIndex];
+        loopTarget.style.transform = 'translateY(12px)';
+        setTimeout(() => {
+          loopTarget.style.opacity = '1';
+          loopTarget.style.transform = 'translateY(0)';
+        }, 50);
+      }, 300);
+    }, 2400);
+
+    // =========================================================
+    // 5. REACTBITS DECRYPTED TEXT (Hacker Unscramble on Load)
+    // =========================================================
+    const originalTitle = "OS Memory Leak Detector";
+    const chars = "ABCDEF0123456789!@#$%^&*";
+    const titleElement = document.getElementById('mainTitle');
+    let iteration = 0;
+
+    function decryptTitle() {
+      const interval = setInterval(() => {
+        titleElement.innerText = originalTitle.split("").map((letter, index) => {
+          if (index < iteration) return originalTitle[index];
+          return chars[Math.floor(Math.random() * chars.length)];
+        }).join("");
+
+        if (iteration >= originalTitle.length) clearInterval(interval);
+        iteration += 1 / 2;
+      }, 30);
+    }
+    decryptTitle();
+
+    // =========================================================
+    // 6. BACKEND API LOGIC & UI UPDATER
+    // =========================================================
     async function updateUI() {
       const res = await fetch('/api/state');
       const data = await res.json();
@@ -407,8 +586,8 @@
               <td>${b.size.toLocaleString()} B</td>
               <td class="text-secondary">${b.timestamp}</td>
               <td class="text-end">
-                <button class="btn btn-outline-danger btn-sm py-0 px-2 rounded-2" onclick="deallocate('${b.address}')">
-                  <i class="bi bi-trash3 me-1"></i>Free
+                <button class="specular-btn py-1 px-3" onclick="deallocate('${b.address}')">
+                  <i class="bi bi-trash3 text-danger"></i> Free
                 </button>
               </td>
             </tr>
@@ -470,7 +649,7 @@
 
       if (data.blocks.length === 0) {
         alertBox.innerHTML = `
-          <div class="alert alert-success d-flex align-items-center gap-2 border-0 glass-card text-success fw-bold py-3">
+          <div class="alert alert-success d-flex align-items-center gap-2 border-0 spotlight-card text-success fw-bold py-3">
             <i class="bi bi-check-circle-fill fs-4"></i>
             <div>
               [AUDIT PASSED] No memory leaks detected!<br>
@@ -481,7 +660,6 @@
       } else {
         let totalLeaked = data.blocks.reduce((acc, b) => acc + b.size, 0);
         
-        // Trigger pulsing red alarm animation on leaked chunks & table rows
         data.blocks.forEach(b => {
           const chunk = document.getElementById('chunk-' + b.address);
           if (chunk) chunk.classList.add('chunk-leak');
@@ -490,7 +668,7 @@
         });
 
         alertBox.innerHTML = `
-          <div class="alert alert-danger border-0 glass-card py-3">
+          <div class="alert alert-danger border-0 spotlight-card py-3">
             <div class="d-flex align-items-center gap-2 mb-1">
               <i class="bi bi-exclamation-triangle-fill fs-4 text-danger"></i>
               <strong class="fs-6 text-danger">MEMORY LEAK(S) DETECTED!</strong>
@@ -505,7 +683,7 @@
       }
     }
 
-    // Initial load
+    // Initial fetch
     updateUI();
   </script>
 </body>
